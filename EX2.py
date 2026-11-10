@@ -32,8 +32,7 @@ def lecturer():
 @app.route('/api/qr-code')
 def get_qr_code():
     token = generate_current_token()
-    target_url = f"https://YOUR-RENDER-URL.onrender.com/?token={token}"
-    
+    target_url = f"https://ex2-students-attendance-cheaking.onrender.com/?token={token}"    
     qr = qrcode.QRCode(box_size=10, border=2)
     qr.add_data(target_url)
     qr.make(fit=True)
