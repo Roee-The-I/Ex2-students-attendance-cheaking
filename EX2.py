@@ -32,7 +32,7 @@ def lecturer():
 @app.route('/api/qr-code')
 def get_qr_code():
     token = generate_current_token()
-    target_url = f"http://10.8.14.203:5000/?token={token}"
+    target_url = f"https://YOUR-RENDER-URL.onrender.com/?token={token}"
     
     qr = qrcode.QRCode(box_size=10, border=2)
     qr.add_data(target_url)
