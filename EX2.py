@@ -5,7 +5,7 @@ from flask import Flask, render_template_string, request, jsonify
 import qrcode
 from geopy.distance import geodesic
 
-app = Flask(_name_)
+app = Flask(__name__)
 
 # --- CLASSROOM LOCATION SETTINGS ---
 # Replace these with the exact coordinates of your lecture hall
@@ -32,7 +32,7 @@ def lecturer():
 @app.route('/api/qr-code')
 def get_qr_code():
     token = generate_current_token()
-    target_url = f"{request.host_url}?token={token}"
+    target_url = f"http://10.8.14.203:5000/?token={token}"
     
     qr = qrcode.QRCode(box_size=10, border=2)
     qr.add_data(target_url)
@@ -195,5 +195,5 @@ STUDENT_HTML = """
 </html>
 """
 
-if _name_ == '_main_':
+if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
