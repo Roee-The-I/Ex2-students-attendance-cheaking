@@ -212,44 +212,91 @@ STUDENT_HTML = """
     </div>
     <script>
         let userLocation = null;
+        let retryTimer = null;
+        let watchId = null;
 
         function requestLocation() {
+            // One-time latch: If location was already acquired, NEVER run again
+            if (userLocation) return;
+
             const locStatus = document.getElementById('loc-status');
             if (!navigator.geolocation) {
                 locStatus.innerText = "❌ Geolocation is not supported by your browser.";
                 locStatus.style.color = "red";
                 return;
             }
+
             locStatus.innerText = "📍 Acquiring GPS location...";
             locStatus.style.color = "#333";
 
-            navigator.geolocation.getCurrentPosition(
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+            }
+
+            watchId = navigator.geolocation.watchPosition(
                 (pos) => {
                     userLocation = {
                         latitude: pos.coords.latitude,
                         longitude: pos.coords.longitude,
                         accuracy: pos.coords.accuracy
                     };
+
+                    // Stop watching once acquired
+                    if (watchId !== null) {
+                        navigator.geolocation.clearWatch(watchId);
+                        watchId = null;
+                    }
+                    if (retryTimer) {
+                        clearTimeout(retryTimer);
+                        retryTimer = null;
+                    }
+
+                    // Permanently clear warning and show success
                     locStatus.innerText = `✅ Location acquired (Accuracy: ±${Math.round(pos.coords.accuracy)}m)`;
                     locStatus.style.color = "green";
                 },
                 (err) => {
+                    if (userLocation) return;
+
                     locStatus.style.color = "red";
                     if (err.code === 1) {
                         locStatus.innerText = "❌ Location permission denied. Please allow location access in your browser settings.";
                     } else if (err.code === 2) {
-                        locStatus.innerText = "❌ Location unavailable. Please turn on device GPS/location services.";
+                        locStatus.innerText = "⚠️ Device GPS is disabled. Please turn on location services on your phone.";
+                        if (!retryTimer) {
+                            retryTimer = setTimeout(() => {
+                                retryTimer = null;
+                                if (!userLocation) requestLocation();
+                            }, 3000);
+                        }
                     } else {
-                        locStatus.innerText = "❌ Location request timed out. Retrying...";
-                        setTimeout(requestLocation, 2500);
+                        locStatus.innerText = "⏳ Acquiring GPS signal (retrying...)";
+                        if (!retryTimer) {
+                            retryTimer = setTimeout(() => {
+                                retryTimer = null;
+                                if (!userLocation) requestLocation();
+                            }, 3000);
+                        }
                     }
                 },
-                { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
             );
         }
 
         // Pre-fetch location immediately when page loads upon QR scan
         window.addEventListener('DOMContentLoaded', requestLocation);
+
+        // Auto-detect when the student returns to the browser after turning GPS on in phone settings
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && !userLocation) {
+                requestLocation();
+            }
+        });
+        window.addEventListener('focus', () => {
+            if (!userLocation) {
+                requestLocation();
+            }
+        });
 
         function checkIn() {
             const statusDiv = document.getElementById('status');
