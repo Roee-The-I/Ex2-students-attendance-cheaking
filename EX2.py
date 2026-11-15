@@ -20,14 +20,21 @@ RENDER_URL = "https://ex2-students-attendance-cheaking.onrender.com"
 
 # Load allowed emails from CSV (only email column)
 ALLOWED_EMAILS = set()
-try:
-    with open("students.csv", newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            email = row.get("דוא\"ל") or row.get("email") or row.get("Email")
-            if email:
-                ALLOWED_EMAILS.add(email.strip().lower())
-except FileNotFoundError:
+csv_files = ["students.csv", "courseid_130158_participants.csv"]
+for csv_name in csv_files:
+    try:
+        with open(csv_name, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                email = row.get("דוא\"ל") or row.get("email") or row.get("Email")
+                if email:
+                    ALLOWED_EMAILS.add(email.strip().lower())
+        if ALLOWED_EMAILS:
+            break
+    except FileNotFoundError:
+        continue
+
+if not ALLOWED_EMAILS:
     # Fallback small list for testing
     ALLOWED_EMAILS = {"test@example.com", "student@ariel.ac.il"}
 
@@ -86,14 +93,25 @@ def submit_attendance():
         if rec["email"] == email and rec["date"] == today:
             return jsonify({"success": False, "message": "Already marked attendance today."}), 400
     
+    try:
+        lat = float(student_lat)
+        lon = float(student_lon)
+        accuracy = float(data.get('accuracy', 0))
+    except (ValueError, TypeError):
+        return jsonify({"success": False, "message": "Invalid coordinates received."}), 400
+    
     classroom_coords = (CLASSROOM_LAT, CLASSROOM_LON)
-    student_coords = (float(student_lat), float(student_lon))
+    student_coords = (lat, lon)
     distance_meters = geodesic(classroom_coords, student_coords).meters
     
-    if distance_meters > MAX_ALLOWED_RADIUS_METERS:
+    # Account for indoor GPS inaccuracy:
+    effective_distance = max(0.0, distance_meters - (accuracy / 2))
+    
+    if effective_distance > MAX_ALLOWED_RADIUS_METERS:
+        acc_text = f" (accuracy: ±{accuracy:.0f}m)" if accuracy > 0 else ""
         return jsonify({
             "success": False,
-            "message": f"Too far from classroom ({distance_meters:.0f}m)."
+            "message": f"Too far from classroom ({distance_meters:.0f}m away{acc_text}). Max allowed is {int(MAX_ALLOWED_RADIUS_METERS)}m."
         }), 403
     
     # Save
@@ -107,7 +125,7 @@ def submit_attendance():
     
     return jsonify({
         "success": True,
-        "message": f"Attendance recorded! ({distance_meters:.0f}m)"
+        "message": f"Attendance recorded! ({distance_meters:.0f}m away)"
     })
 
 @app.route('/api/attendance-list')
@@ -179,11 +197,13 @@ STUDENT_HTML = """
         input, button { width: 100%; padding: 12px; margin: 8px 0; box-sizing: border-box; border-radius: 6px; font-size: 16px; }
         button { background: #007bff; color: white; border: none; font-weight: bold; cursor: pointer; }
         #status { font-weight: bold; margin-top: 15px; }
+        #loc-status { font-size: 14px; margin: 10px 0; padding: 10px; border-radius: 6px; background: #f8f9fa; border: 1px solid #ddd; }
     </style>
 </head>
 <body>
     <div class="box">
         <h3>Classroom Attendance</h3>
+        <div id="loc-status">📍 Requesting GPS location...</div>
         <label>Email:</label>
         <input type="email" id="email" placeholder="your.email@example.com">
         <input type="hidden" id="token" value="{{ token }}">
@@ -191,49 +211,87 @@ STUDENT_HTML = """
         <div id="status"></div>
     </div>
     <script>
+        let userLocation = null;
+
+        function requestLocation() {
+            const locStatus = document.getElementById('loc-status');
+            if (!navigator.geolocation) {
+                locStatus.innerText = "❌ Geolocation is not supported by your browser.";
+                locStatus.style.color = "red";
+                return;
+            }
+            locStatus.innerText = "📍 Acquiring GPS location...";
+            locStatus.style.color = "#333";
+
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    userLocation = {
+                        latitude: pos.coords.latitude,
+                        longitude: pos.coords.longitude,
+                        accuracy: pos.coords.accuracy
+                    };
+                    locStatus.innerText = `✅ Location acquired (Accuracy: ±${Math.round(pos.coords.accuracy)}m)`;
+                    locStatus.style.color = "green";
+                },
+                (err) => {
+                    locStatus.style.color = "red";
+                    if (err.code === 1) {
+                        locStatus.innerText = "❌ Location permission denied. Please allow location access in your browser settings.";
+                    } else if (err.code === 2) {
+                        locStatus.innerText = "❌ Location unavailable. Please turn on device GPS/location services.";
+                    } else {
+                        locStatus.innerText = "❌ Location request timed out. Retrying...";
+                        setTimeout(requestLocation, 2500);
+                    }
+                },
+                { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+            );
+        }
+
+        // Pre-fetch location immediately when page loads upon QR scan
+        window.addEventListener('DOMContentLoaded', requestLocation);
+
         function checkIn() {
             const statusDiv = document.getElementById('status');
             const email = document.getElementById('email').value.trim();
             const token = document.getElementById('token').value;
+
             if (!email) {
                 statusDiv.innerText = "Please enter your email.";
                 statusDiv.style.color = "red";
                 return;
             }
-            if (!navigator.geolocation) {
-                statusDiv.innerText = "Geolocation not supported.";
+
+            if (!userLocation) {
+                statusDiv.innerText = "Waiting for location fix... Please make sure location permission is granted.";
+                statusDiv.style.color = "orange";
+                requestLocation();
                 return;
             }
-            statusDiv.innerText = "Getting location...";
+
+            statusDiv.innerText = "Submitting attendance...";
             statusDiv.style.color = "black";
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    fetch('/api/submit-attendance', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            email: email,
-                            latitude: position.coords.latitude,
-                            longitude: position.coords.longitude,
-                            token: token
-                        })
-                    })
-                    .then(res => res.json())
-                    .then(data => {
-                        statusDiv.innerText = data.message;
-                        statusDiv.style.color = data.success ? "green" : "red";
-                    })
-                    .catch(() => {
-                        statusDiv.innerText = "Network error.";
-                        statusDiv.style.color = "red";
-                    });
-                },
-                (error) => {
-                    statusDiv.innerText = "Location error: " + error.message;
-                    statusDiv.style.color = "red";
-                },
-                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-            );
+
+            fetch('/api/submit-attendance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: email,
+                    latitude: userLocation.latitude,
+                    longitude: userLocation.longitude,
+                    accuracy: userLocation.accuracy,
+                    token: token
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                statusDiv.innerText = data.message;
+                statusDiv.style.color = data.success ? "green" : "red";
+            })
+            .catch(() => {
+                statusDiv.innerText = "Network error. Please try again.";
+                statusDiv.style.color = "red";
+            });
         }
     </script>
 </body>
