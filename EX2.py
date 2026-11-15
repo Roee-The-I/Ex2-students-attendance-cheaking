@@ -12,6 +12,7 @@ from geopy.distance import geodesic
 app = Flask(__name__)
 
 # --- SETTINGS ---
+basel = "basel"
 CLASSROOM_LAT = 32.1042
 CLASSROOM_LON = 35.1748
 MAX_ALLOWED_RADIUS_METERS = 80.0
