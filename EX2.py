@@ -11,8 +11,6 @@ from geopy.distance import geodesic
 
 app = Flask(__name__)
 
-basel = "base"
-
 # --- SETTINGS ---
 CLASSROOM_LAT = 32.1042
 CLASSROOM_LON = 35.1748
