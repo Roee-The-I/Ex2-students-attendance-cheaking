@@ -169,6 +169,9 @@ def attendance_list():
     ).fetchall()
     return jsonify([{"email": r["email"], "time": r["timestamp"].split(" ")[1], "distance": r["distance"]} for r in rows])
 
+@app.route('/comments')
+def comments():
+    return render_template_string(COMMENTS_HTML)
 # --- HTML TEMPLATES ---
 LECTURER_HTML = """
 <!DOCTYPE html>
@@ -196,6 +199,7 @@ LECTURER_HTML = """
         <thead><tr><th>Email</th><th>Time</th><th>Distance (m)</th></tr></thead>
         <tbody></tbody>
     </table>
+    <p><a href="/comments" style="font-size:18px; color:#007bff;">📝 עבור לדף הערות והצעות</a></p>
     <script>
         function refreshQR() {
             fetch('/api/qr-code')
@@ -358,5 +362,30 @@ STUDENT_HTML = """
 </html>
 """
 
+COMMENTS_HTML = """
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>הערות והצעות</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 15px; background: #f4f4f9; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h2 { color: #007bff; text-align: center; }
+        iframe { width: 100%; height: 70vh; border: none; border-radius: 8px; }
+        .back { display: inline-block; margin-bottom: 15px; color: #007bff; text-decoration: none; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back">← חזרה לנוכחות</a>
+        <h2>הערות והצעות בזמן אמת</h2>
+        <p style="text-align:center;">הוסיפו הערות, שאלות או הצעות. הכל מתעדכן בזמן אמת.</p>
+        <iframe src="https://padlet.com/roeygt21/padlet-s025lzfo0hjbeadrsntk" allow="camera;microphone"></iframe>
+    </div>
+</body>
+</html>
+"""
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
