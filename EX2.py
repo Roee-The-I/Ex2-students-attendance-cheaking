@@ -67,10 +67,20 @@ def init_db():
 
 init_db()
 
-def generate_current_token():
-    time_window = int(time.time() // 30)
+def generate_token(time_window=None):
+    if time_window is None:
+        time_window = int(time.time() // 30)
     msg = f"{SECRET_SEED}_{time_window}".encode()
     return hmac.new(SECRET_SEED.encode(), msg, hashlib.sha256).hexdigest()[:12]
+
+def is_token_valid(token):
+    """Accept token from current window or previous windows (up to 10 minutes)."""
+    current_window = int(time.time() // 30)
+    # Allow up to 20 windows back (20 * 30s = 10 minutes)
+    for i in range(20):
+        if token == generate_token(current_window - i):
+            return True
+    return False
 
 @app.route('/')
 def index():
@@ -83,7 +93,7 @@ def lecturer():
 
 @app.route('/api/qr-code')
 def get_qr_code():
-    token = generate_current_token()
+    token = generate_token()
     target_url = f"https://ex2-students-attendance-cheaking.onrender.com/?token={token}"
     qr = qrcode.QRCode(box_size=10, border=2)
     qr.add_data(target_url)
@@ -100,8 +110,8 @@ def submit_attendance():
     email = (data.get('email') or "").strip().lower()
     token = data.get('token')
 
-    if token != generate_current_token():
-        return jsonify({"success": False, "message": "QR expired. Please scan again."}), 400
+    if not is_token_valid(token):
+        return jsonify({"success": False, "message": "Session expired. Please scan the QR again."}), 400
 
     if not email or data.get('latitude') is None or data.get('longitude') is None:
         return jsonify({"success": False, "message": "Missing email or location."}), 400
