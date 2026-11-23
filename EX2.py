@@ -111,7 +111,8 @@ def submit_attendance():
     data = request.json or {}
     email = (data.get('email') or "").strip().lower()
     token = data.get('token')
-
+@app.route('/comments')
+def comments():
     if not is_token_valid(token):
         return jsonify({"success": False, "message": "Session expired. Please scan the QR again."}), 400
 
