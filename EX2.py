@@ -62,6 +62,25 @@ def init_db():
             distance REAL
         )
     """)
+    db.execute("""
+    CREATE TABLE IF NOT EXISTS polls (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question TEXT NOT NULL,
+        options TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        is_active INTEGER DEFAULT 1
+    )
+""")
+db.execute("""
+    CREATE TABLE IF NOT EXISTS poll_votes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        poll_id INTEGER NOT NULL,
+        email TEXT NOT NULL,
+        choice TEXT NOT NULL,
+        voted_at TEXT NOT NULL,
+        UNIQUE(poll_id, email)
+    )
+""")
     db.commit()
     db.close()
 
@@ -94,6 +113,49 @@ def qr_page():
 def comments():
     return render_template_string(COMMENTS_HTML)
 
+@app.route('/create-poll', methods=['GET', 'POST'])
+def create_poll():
+    if request.method == 'POST':
+        question = request.form.get('question', '').strip()
+        options = request.form.get('options', '').strip()
+        if question and options:
+            db = get_db()
+            # כבה סקרים קודמים
+            db.execute("UPDATE polls SET is_active = 0")
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            db.execute(
+                "INSERT INTO polls (question, options, created_at, is_active) VALUES (?, ?, ?, 1)",
+                (question, options, now)
+            )
+            db.commit()
+            return render_template_string("<h2>הסקר נוצר בהצלחה!</h2><a href='/poll'>צפה בסקר</a> | <a href='/create-poll'>צור עוד</a>")
+    return render_template_string(CREATE_POLL_HTML)
+
+@app.route('/poll', methods=['GET', 'POST'])
+def poll():
+    db = get_db()
+    poll = db.execute("SELECT * FROM polls WHERE is_active = 1 ORDER BY id DESC LIMIT 1").fetchone()
+    
+    if not poll:
+        return "<h2>אין סקר פעיל כרגע</h2><a href='/'>חזרה</a>"
+    
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        choice = request.form.get('choice')
+        if email and choice:
+            try:
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                db.execute(
+                    "INSERT INTO poll_votes (poll_id, email, choice, voted_at) VALUES (?, ?, ?, ?)",
+                    (poll['id'], email, choice, now)
+                )
+                db.commit()
+                return "<h2>תודה! ההצבעה נרשמה</h2><a href='/poll'>חזרה</a>"
+            except sqlite3.IntegrityError:
+                return "<h2>כבר הצבעת בסקר הזה</h2><a href='/poll'>חזרה</a>"
+    
+    options = [opt.strip() for opt in poll['options'].split(',') if opt.strip()]
+    return render_template_string(POLL_HTML, question=poll['question'], options=options)
 @app.route('/lecturer')
 def lecturer():
     return render_template_string(LECTURER_HOME_HTML)
@@ -383,6 +445,7 @@ HOME_HTML = """
     <div class="box">
         <h2>דף הבית</h2>
         <a href="/comments" class="btn">הערות והצעות</a>
+        <a href="/poll" class="btn">ענה על סקר</a>
     </div>
 </body>
 </html>
@@ -407,6 +470,7 @@ LECTURER_HOME_HTML = """
         <h2>דף המרצה</h2>
         <a href="/qr" class="btn">📷 פתח QR לנוכחות</a>
         <a href="/comments" class="btn">📝 הערות והצעות</a>
+        <a href="/create-poll" class="btn">צור סקר</a>
     </div>
 </body>
 </html>
@@ -430,6 +494,69 @@ COMMENTS_HTML = """
         <a href="/" class="back">← חזרה לדף הבית</a>
         <h2 style="text-align:center;">הערות והצעות</h2>
         <iframe src="https://padlet.com/roeygt21/padlet-s025lzfo0hjbeadrsntk"></iframe>
+    </div>
+</body>
+</html>
+"""
+
+CREATE_POLL_HTML = """
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>יצירת סקר</title>
+    <style>
+        body { font-family: Arial; background:#f4f4f9; padding:20px; }
+        .box { background:white; padding:25px; border-radius:10px; max-width:500px; margin:auto; }
+        input, textarea, button { width:100%; padding:10px; margin:8px 0; box-sizing:border-box; }
+        button { background:#007bff; color:white; border:none; border-radius:6px; font-weight:bold; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h2>יצירת סקר חדש</h2>
+        <form method="POST">
+            <label>שאלה:</label>
+            <input type="text" name="question" required placeholder="מה דעתכם על...">
+            <label>אפשרויות (מופרדות בפסיק):</label>
+            <textarea name="options" required placeholder="אפשרות 1, אפשרות 2, אפשרות 3"></textarea>
+            <button type="submit">צור סקר</button>
+        </form>
+        <p><a href="/">חזרה לדף הבית</a></p>
+        
+    </div>
+</body>
+</html>
+"""
+
+POLL_HTML = """
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>סקר</title>
+    <style>
+        body { font-family: Arial; background:#eef2f3; padding:20px; }
+        .box { background:white; padding:25px; border-radius:10px; max-width:500px; margin:auto; }
+        button { background:#007bff; color:white; border:none; padding:10px 20px; border-radius:6px; }
+        label { display:block; margin:8px 0; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h2>{{ question }}</h2>
+        <form method="POST">
+            <label>אימייל:</label>
+            <input type="email" name="email" required style="width:100%; padding:8px;">
+            {% for opt in options %}
+                <label><input type="radio" name="choice" value="{{ opt }}" required> {{ opt }}</label>
+            {% endfor %}
+            <br><br>
+            <button type="submit">שלח תשובה</button>
+        </form>
+        <p><a href="/">חזרה לדף הבית</a></p>
     </div>
 </body>
 </html>
