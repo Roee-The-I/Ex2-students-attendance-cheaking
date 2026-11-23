@@ -71,7 +71,7 @@ def init_db():
         is_active INTEGER DEFAULT 1
     )
 """)
-db.execute("""
+    db.execute("""
     CREATE TABLE IF NOT EXISTS poll_votes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         poll_id INTEGER NOT NULL,
