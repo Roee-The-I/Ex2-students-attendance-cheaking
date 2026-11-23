@@ -1,0 +1,86 @@
+{
+  "EX2.py": {
+    "mtime": 1795086912.201951,
+    "seen": 1795450356.6158402,
+    "ast_hash": "4a712c5d414b095a0614191a4100fd93",
+    "semantic_hash": "4a712c5d414b095a0614191a4100fd93"
+  },
+  "EX2_claude_sol.py": {
+    "mtime": 1795450162.6692588,
+    "seen": 1795450356.615857,
+    "ast_hash": "0b1a6dbb05ff3851a5b3e404e3ee2840",
+    "semantic_hash": "0b1a6dbb05ff3851a5b3e404e3ee2840"
+  },
+  "app.py": {
+    "mtime": 1795450155.9167607,
+    "seen": 1795450356.615864,
+    "ast_hash": "85e7f5eff9e0df83229367d94454b5c0",
+    "semantic_hash": "85e7f5eff9e0df83229367d94454b5c0"
+  },
+  "attendance_app/__init__.py": {
+    "mtime": 1795452330.697266,
+    "seen": 1795452384.57441,
+    "ast_hash": "6560ddfc8b551f0a59e749e0e4dcafb6",
+    "semantic_hash": ""
+  },
+  "attendance_app/config.py": {
+    "mtime": 1795452330.6699717,
+    "seen": 1795452384.5744193,
+    "ast_hash": "bc84233d439118eb45e06f187d8ef66c",
+    "semantic_hash": ""
+  },
+  "attendance_app/database.py": {
+    "mtime": 1795452348.086404,
+    "seen": 1795452384.5744274,
+    "ast_hash": "f308195b15ba28969dae3d429cb491b5",
+    "semantic_hash": ""
+  },
+  "attendance_app/routes.py": {
+    "mtime": 1795452330.716186,
+    "seen": 1795452384.5744333,
+    "ast_hash": "d9957303075018cef42898ff4948707e",
+    "semantic_hash": ""
+  },
+  "attendance_app/security.py": {
+    "mtime": 1795450155.278587,
+    "seen": 1795450356.615879,
+    "ast_hash": "c19b6e53ff79f51f3bcf0ad55484026d",
+    "semantic_hash": "c19b6e53ff79f51f3bcf0ad55484026d"
+  },
+  "tests/test_attendance_review.py": {
+    "mtime": 1795452408.6694164,
+    "seen": 1795452419.841516,
+    "ast_hash": "11da77f7d3c3b52be29de0f4c16ba57d",
+    "semantic_hash": ""
+  },
+  ".github/copilot-instructions.md": {
+    "mtime": 1795450345.5002086,
+    "seen": 1795452384.5744517,
+    "ast_hash": "ec2dc0dc7bef63488889f34de2f5584d",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1795452330.762412,
+    "seen": 1795452384.5744572,
+    "ast_hash": "cea68f4744443dc63cd8cd71857fbca4",
+    "semantic_hash": ""
+  },
+  "requirements.txt": {
+    "mtime": 1794730266.1551704,
+    "seen": 1795452384.5744631,
+    "ast_hash": "4ad82fb66182519274a4b844dee0a516",
+    "semantic_hash": ""
+  },
+  "templates/lecturer.html": {
+    "mtime": 1795452330.7307487,
+    "seen": 1795452384.5744681,
+    "ast_hash": "a37d3fcb6944f3f68a6c899b442ebc97",
+    "semantic_hash": ""
+  },
+  "templates/student.html": {
+    "mtime": 1795452330.745892,
+    "seen": 1795452384.5744722,
+    "ast_hash": "aa65488c535ebe26b5dbbce523b40385",
+    "semantic_hash": ""
+  }
+}
