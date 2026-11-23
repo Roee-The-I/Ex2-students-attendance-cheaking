@@ -368,20 +368,17 @@ HOME_HTML = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>דף הבית - סטודנט</title>
+    <title>דף הבית</title>
     <style>
-        body { font-family: Arial, sans-serif; background: #eef2f3; margin: 0; padding: 20px; }
-        .box { background: white; padding: 30px; border-radius: 12px; max-width: 420px; margin: 40px auto; text-align: center; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-        a.btn { display: block; background: #007bff; color: white; padding: 14px; margin: 12px 0; border-radius: 8px; text-decoration: none; font-weight: bold; }
-        a.btn:hover { background: #0056b3; }
+        body { font-family: Arial, sans-serif; background: #eef2f3; padding: 20px; }
+        .box { background: white; padding: 30px; border-radius: 12px; max-width: 400px; margin: 40px auto; text-align: center; }
+        a.btn { display: block; background: #007bff; color: white; padding: 14px; margin: 10px 0; border-radius: 8px; text-decoration: none; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="box">
-        <h2>ברוכים הבאים</h2>
-        <p>דף הבית של הסטודנט</p>
-        <a href="/comments" class="btn">📝 הערות והצעות</a>
-        <!-- כאן אפשר להוסיף עוד כפתורים בעתיד -->
+        <h2>דף הבית</h2>
+        <a href="/comments" class="btn">הערות והצעות</a>
     </div>
 </body>
 </html>
