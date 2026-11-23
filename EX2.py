@@ -19,7 +19,7 @@ MAX_ALLOWED_RADIUS_METERS = 80.0
 SECRET_SEED = "ARIEL_I2SE_CLASS_KEY"
 RENDER_URL = "https://ex2-students-attendance-cheaking.onrender.com"
 DB_PATH = "attendance.db"
-
+stam=0;
 # Load allowed emails
 ALLOWED_EMAILS = set()
 csv_files = ["students.csv", "courseid_130158_participants.csv"]
