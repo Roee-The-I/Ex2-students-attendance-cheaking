@@ -83,14 +83,16 @@ def is_token_valid(token):
     return False
 
 @app.route('/')
-def index():
-    token = request.args.get('token', '')
-    return render_template_string(STUDENT_HTML, token=token)
+def home():
+    return render_template_string(HOME_HTML)
+
+@app.route('/qr')
+def qr_page():
+    return render_template_string(LECTURER_HTML)
 
 @app.route('/lecturer')
 def lecturer():
-    return render_template_string(LECTURER_HTML)
-
+    return render_template_string(LECTURER_HOME_HTML)
 @app.route('/api/qr-code')
 def get_qr_code():
     token = generate_token()
@@ -345,8 +347,11 @@ STUDENT_HTML = """
             })
             .then(res => res.json())
             .then(data => {
-                statusDiv.innerText = data.message;
-                statusDiv.style.color = data.success ? "green" : "red";
+               statusDiv.innerText=data.message;
+               statusDiv.innerText=data.success ?"green" : "red";
+               if(data.success){
+               setTimeout(()=>{window.location.href="/";}, 1500);
+               }
             })
             .catch(() => {
                 statusDiv.innerText = "Network error. Please try again.";
@@ -357,6 +362,53 @@ STUDENT_HTML = """
 </body>
 </html>
 """
+HOME_HTML = """
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>דף הבית - סטודנט</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #eef2f3; margin: 0; padding: 20px; }
+        .box { background: white; padding: 30px; border-radius: 12px; max-width: 420px; margin: 40px auto; text-align: center; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        a.btn { display: block; background: #007bff; color: white; padding: 14px; margin: 12px 0; border-radius: 8px; text-decoration: none; font-weight: bold; }
+        a.btn:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h2>ברוכים הבאים</h2>
+        <p>דף הבית של הסטודנט</p>
+        <a href="/comments" class="btn">📝 הערות והצעות</a>
+        <!-- כאן אפשר להוסיף עוד כפתורים בעתיד -->
+    </div>
+</body>
+</html>
+"""
 
+LECTURER_HOME_HTML = """
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>דף הבית - מרצה</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f4f4f9; margin: 0; padding: 20px; }
+        .box { background: white; padding: 30px; border-radius: 12px; max-width: 420px; margin: 40px auto; text-align: center; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        a.btn { display: block; background: #007bff; color: white; padding: 14px; margin: 12px 0; border-radius: 8px; text-decoration: none; font-weight: bold; }
+        a.btn:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h2>דף המרצה</h2>
+        <a href="/qr" class="btn">📷 פתח QR לנוכחות</a>
+        <a href="/comments" class="btn">📝 הערות והצעות</a>
+    </div>
+</body>
+</html>
+"""
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
