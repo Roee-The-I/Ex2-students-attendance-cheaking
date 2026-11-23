@@ -410,5 +410,28 @@ LECTURER_HOME_HTML = """
 </body>
 </html>
 """
+COMMENTS_HTML = """
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>הערות והצעות</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 15px; background: #f4f4f9; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; }
+        iframe { width: 100%; height: 70vh; border: none; }
+        .back { color: #007bff; text-decoration: none; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back">← חזרה לדף הבית</a>
+        <h2 style="text-align:center;">הערות והצעות</h2>
+        <iframe src="https://padlet.com/roeygt21/padlet-s025lzfo0hjbeadrsntk"></iframe>
+    </div>
+</body>
+</html>
+"""
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
