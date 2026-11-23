@@ -90,6 +90,10 @@ def home():
 def qr_page():
     return render_template_string(LECTURER_HTML)
 
+@app.route('/comments')
+def comments():
+    return render_template_string(COMMENTS_HTML)
+
 @app.route('/lecturer')
 def lecturer():
     return render_template_string(LECTURER_HOME_HTML)
@@ -111,8 +115,7 @@ def submit_attendance():
     data = request.json or {}
     email = (data.get('email') or "").strip().lower()
     token = data.get('token')
-@app.route('/comments')
-def comments():
+
     if not is_token_valid(token):
         return jsonify({"success": False, "message": "Session expired. Please scan the QR again."}), 400
 
