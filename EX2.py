@@ -101,6 +101,29 @@ def is_token_valid(token):
             return True
     return False
 
+def generate_session_token():
+    """Issue a signed session token after the QR token is validated at scan time."""
+    timestamp = int(time.time())
+    msg = f"{SECRET_SEED}_session_{timestamp}".encode()
+    sig = hmac.new(SECRET_SEED.encode(), msg, hashlib.sha256).hexdigest()[:16]
+    return f"{timestamp}_{sig}"
+
+def is_session_token_valid(session_token, max_age_seconds=120):
+    """Check if session token is valid and not older than 2 minutes."""
+    try:
+        parts = session_token.split('_', 1)
+        if len(parts) != 2:
+            return False
+        timestamp = int(parts[0])
+        sig = parts[1]
+        if time.time() - timestamp > max_age_seconds:
+            return False
+        msg = f"{SECRET_SEED}_session_{timestamp}".encode()
+        expected = hmac.new(SECRET_SEED.encode(), msg, hashlib.sha256).hexdigest()[:16]
+        return hmac.compare_digest(sig, expected)
+    except (ValueError, TypeError):
+        return False
+
 @app.route('/')
 def home():
     return render_template_string(HOME_HTML)
@@ -161,8 +184,12 @@ def lecturer():
     return render_template_string(LECTURER_HOME_HTML)
 @app.route('/checkin')
 def checkin():
-    token = request.args.get('token', '')
-    return render_template_string(STUDENT_HTML, token=token)
+    qr_token = request.args.get('token', '')
+    if not is_token_valid(qr_token):
+        return "<h2 style='text-align:center;margin-top:60px;'>⏰ Session expired. Please scan the QR code again.</h2>", 403
+    # QR was valid at scan time → issue a longer-lived session token for form submission
+    session_token = generate_session_token()
+    return render_template_string(STUDENT_HTML, token=session_token)
 
 @app.route('/api/qr-code')
 def get_qr_code():
@@ -183,7 +210,7 @@ def submit_attendance():
     email = (data.get('email') or "").strip().lower()
     token = data.get('token')
 
-    if not is_token_valid(token):
+    if not is_session_token_valid(token):
         return jsonify({"success": False, "message": "Session expired. Please scan the QR again."}), 400
 
     if not email or data.get('latitude') is None or data.get('longitude') is None:
