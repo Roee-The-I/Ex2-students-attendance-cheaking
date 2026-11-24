@@ -88,15 +88,15 @@ init_db()
 
 def generate_token(time_window=None):
     if time_window is None:
-        time_window = int(time.time() // 30)
+        time_window = int(time.time() // 5)
     msg = f"{SECRET_SEED}_{time_window}".encode()
     return hmac.new(SECRET_SEED.encode(), msg, hashlib.sha256).hexdigest()[:12]
 
 def is_token_valid(token):
-    """Accept token from current window or previous windows (up to 10 minutes)."""
-    current_window = int(time.time() // 30)
-    # Allow up to 20 windows back (20 * 30s = 10 minutes)
-    for i in range(20):
+    """Accept token from current window or 1 previous window (~5-10 seconds)."""
+    current_window = int(time.time() // 5)
+    # Allow current + 1 previous window (2 * 5s = 10 seconds max grace)
+    for i in range(2):
         if token == generate_token(current_window - i):
             return True
     return False
@@ -159,10 +159,15 @@ def poll():
 @app.route('/lecturer')
 def lecturer():
     return render_template_string(LECTURER_HOME_HTML)
+@app.route('/checkin')
+def checkin():
+    token = request.args.get('token', '')
+    return render_template_string(STUDENT_HTML, token=token)
+
 @app.route('/api/qr-code')
 def get_qr_code():
     token = generate_token()
-    target_url = f"https://ex2-students-attendance-cheaking.onrender.com/?token={token}"
+    target_url = f"https://ex2-students-attendance-cheaking.onrender.com/checkin?token={token}"    
     qr = qrcode.QRCode(box_size=10, border=2)
     qr.add_data(target_url)
     qr.make(fit=True)
@@ -256,7 +261,7 @@ LECTURER_HTML = """
 <body>
     <div class="card">
         <h2>Scan QR to Mark Attendance</h2>
-        <p>Updates every 30 seconds</p>
+        <p>Updates every 5 seconds</p>
         <img id="qr-img" src="" alt="QR Code">
     </div>
     <h3>Today's Attendance</h3>
@@ -283,7 +288,7 @@ LECTURER_HTML = """
         }
         refreshQR();
         loadAttendance();
-        setInterval(refreshQR, 10000);
+        setInterval(refreshQR, 5000);
         setInterval(loadAttendance, 5000);
     </script>
 </body>
@@ -414,7 +419,7 @@ STUDENT_HTML = """
             .then(res => res.json())
             .then(data => {
                statusDiv.innerText=data.message;
-               statusDiv.innerText=data.success ?"green" : "red";
+               statusDiv.style.color=data.success ?"green" : "red";
                if(data.success){
                setTimeout(()=>{window.location.href="/";}, 1500);
                }
