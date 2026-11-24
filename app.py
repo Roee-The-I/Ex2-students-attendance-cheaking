@@ -1,6 +1,4 @@
-from attendance_app import create_app
-
-app = create_app()
+from EX2 import app
 
 
 if __name__ == "__main__":
