@@ -13,8 +13,8 @@ from geopy.distance import geodesic
 app = Flask(__name__)
 
 # --- SETTINGS ---
-CLASSROOM_LAT = 32.1042
-CLASSROOM_LON = 35.1748
+CLASSROOM_LAT = 32.104430866053
+LASSROOM_LON = 35.20748555661226
 MAX_ALLOWED_RADIUS_METERS = 80.0
 SECRET_SEED = "ARIEL_I2SE_CLASS_KEY"
 RENDER_URL = "https://ex2-students-attendance-cheaking.onrender.com"
