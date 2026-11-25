@@ -1,123 +1,71 @@
 {
   "communities": {
     "0": [
-      "attendance_app_database_get_db",
-      "attendance_app_routes",
-      "attendance_app_routes_attendance_list",
-      "attendance_app_routes_classroom_location",
-      "attendance_app_routes_get_classroom_location",
-      "attendance_app_routes_index",
-      "attendance_app_routes_lecturer",
-      "attendance_app_routes_py_route",
-      "attendance_app_routes_submit_attendance",
-      "attendance_app_security_lecturer_required",
-      "attendance_app_security_lecturer_required_wrapper"
-    ],
-    "1": [
-      "app",
-      "attendance_app_database",
-      "attendance_app_database_close_db",
-      "attendance_app_database_init_db",
-      "attendance_app_init",
-      "attendance_app_init_create_app",
-      "ex2_claude_sol",
-      "ex2_init_db",
-      "flask",
-      "sqlite3"
-    ],
-    "2": [
-      "attendance_app_security",
-      "attendance_app_security_generate_token",
-      "attendance_app_security_is_token_valid",
+      "ex2_checkin",
+      "ex2_generate_session_token",
       "ex2_generate_token",
-      "functools",
-      "hashlib",
+      "ex2_is_session_token_valid",
+      "ex2_is_token_valid",
+      "ex2_rationale_105",
+      "ex2_rationale_112",
+      "ex2_rationale_96",
       "hmac",
       "time"
     ],
-    "3": [
+    "1": [
+      "ex2_attendance_list",
+      "ex2_comments",
+      "ex2_create_poll",
+      "ex2_get_db",
+      "ex2_home",
+      "ex2_poll",
+      "ex2_qr_page",
+      "ex2_submit_attendance",
+      "route"
+    ],
+    "2": [
+      "app",
+      "csv",
       "datetime",
       "ex2",
-      "ex2_attendance_list",
-      "ex2_get_db",
-      "ex2_is_token_valid",
-      "ex2_rationale_77",
-      "ex2_submit_attendance",
-      "geopy_distance"
+      "ex2_lecturer",
+      "flask",
+      "geopy_distance",
+      "hashlib"
     ],
-    "4": [
-      "attendance_app_routes_get_qr_code",
+    "3": [
       "base64",
       "ex2_get_qr_code",
       "io",
       "qrcode"
     ],
-    "5": [
-      "attendance_app_config",
-      "attendance_app_config_load_allowed_emails",
-      "csv",
-      "os"
-    ],
-    "6": [
-      "ex2_index",
-      "ex2_lecturer",
-      "ex2_py_route"
-    ],
-    "7": [
+    "4": [
       "ex2_close_db",
       "teardown_appcontext"
+    ],
+    "5": [
+      "ex2_init_db",
+      "sqlite3"
     ]
   },
   "cohesion": {
-    "0": 0.4,
-    "1": 0.35555555555555557,
-    "2": 0.42857142857142855,
-    "3": 0.35714285714285715,
-    "4": 0.6,
-    "5": 0.6666666666666666,
-    "6": 0.6666666666666666,
-    "7": 1.0
+    "0": 0.28888888888888886,
+    "1": 0.3055555555555556,
+    "2": 0.25,
+    "3": 0.5,
+    "4": 1.0,
+    "5": 1.0
   },
   "gods": [
     {
-      "id": "attendance_app_database_get_db",
+      "id": "ex2_get_db",
       "label": "get_db()",
-      "degree": 7
-    },
-    {
-      "id": "attendance_app_routes_get_qr_code",
-      "label": "get_qr_code()",
-      "degree": 7
-    },
-    {
-      "id": "attendance_app_security_lecturer_required",
-      "label": "lecturer_required()",
-      "degree": 6
-    },
-    {
-      "id": "attendance_app_security_generate_token",
-      "label": "generate_token()",
       "degree": 6
     },
     {
       "id": "ex2_get_qr_code",
       "label": "get_qr_code()",
       "degree": 6
-    },
-    {
-      "id": "attendance_app_routes_classroom_location",
-      "label": "classroom_location()",
-      "degree": 5
-    },
-    {
-      "id": "attendance_app_routes_submit_attendance",
-      "label": "submit_attendance()",
-      "degree": 5
-    },
-    {
-      "id": "attendance_app_security_is_token_valid",
-      "label": "is_token_valid()",
-      "degree": 5
     },
     {
       "id": "ex2_generate_token",
@@ -128,80 +76,97 @@
       "id": "ex2_is_token_valid",
       "label": "is_token_valid()",
       "degree": 5
+    },
+    {
+      "id": "ex2_generate_session_token",
+      "label": "generate_session_token()",
+      "degree": 5
+    },
+    {
+      "id": "ex2_is_session_token_valid",
+      "label": "is_session_token_valid()",
+      "degree": 5
+    },
+    {
+      "id": "ex2_checkin",
+      "label": "checkin()",
+      "degree": 4
+    },
+    {
+      "id": "ex2_submit_attendance",
+      "label": "submit_attendance()",
+      "degree": 4
+    },
+    {
+      "id": "ex2_create_poll",
+      "label": "create_poll()",
+      "degree": 3
+    },
+    {
+      "id": "ex2_poll",
+      "label": "poll()",
+      "degree": 3
     }
   ],
   "surprises": [
     {
-      "source": "submit_attendance()",
-      "target": "is_token_valid()",
+      "source": "get_db()",
+      "target": "sqlite3",
       "source_files": [
-        "attendance_app/routes.py",
-        "attendance_app/security.py"
+        "EX2.py",
+        ""
       ],
       "confidence": "EXTRACTED",
       "relation": "calls",
-      "why": "bridges separate communities"
-    },
-    {
-      "source": "get_qr_code()",
-      "target": "lecturer_required()",
-      "source_files": [
-        "attendance_app/routes.py",
-        "attendance_app/security.py"
-      ],
-      "confidence": "EXTRACTED",
-      "relation": "references",
-      "why": "bridges separate communities"
-    },
-    {
-      "source": "create_app()",
-      "target": "close_db()",
-      "source_files": [
-        "attendance_app/__init__.py",
-        "attendance_app/database.py"
-      ],
-      "confidence": "INFERRED",
-      "relation": "indirect_call",
-      "why": "inferred connection - not explicitly stated in source"
+      "note": "Bridges community 1 \u2192 community 5"
     },
     {
       "source": "get_qr_code()",
       "target": "generate_token()",
       "source_files": [
-        "attendance_app/routes.py",
-        "attendance_app/security.py"
+        "EX2.py",
+        "EX2.py"
       ],
       "confidence": "EXTRACTED",
       "relation": "calls",
-      "why": "bridges separate communities"
+      "note": "Bridges community 0 \u2192 community 3"
     },
     {
-      "source": "attendance_list()",
-      "target": "get_db()",
+      "source": "submit_attendance()",
+      "target": "is_session_token_valid()",
       "source_files": [
-        "attendance_app/routes.py",
-        "attendance_app/database.py"
+        "EX2.py",
+        "EX2.py"
       ],
       "confidence": "EXTRACTED",
       "relation": "calls",
-      "why": "cross-file semantic connection"
+      "note": "Bridges community 0 \u2192 community 1"
+    },
+    {
+      "source": "get_qr_code()",
+      "target": "route",
+      "source_files": [
+        "EX2.py",
+        ""
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "note": "Bridges community 1 \u2192 community 3"
+    },
+    {
+      "source": "lecturer()",
+      "target": "route",
+      "source_files": [
+        "EX2.py",
+        ""
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "note": "Bridges community 1 \u2192 community 2"
     }
   ],
-  "questions": [
-    {
-      "type": "bridge_node",
-      "question": "Why does `lecturer_required()` connect `Community 0` to `Community 2`, `Community 4`?",
-      "why": "High betweenness centrality (0.046) - this node is a cross-community bridge."
-    },
-    {
-      "type": "bridge_node",
-      "question": "Why does `is_token_valid()` connect `Community 3` to `Community 2`?",
-      "why": "High betweenness centrality (0.042) - this node is a cross-community bridge."
-    },
-    {
-      "type": "bridge_node",
-      "question": "Why does `close_db()` connect `Community 7` to `Community 3`?",
-      "why": "High betweenness centrality (0.040) - this node is a cross-community bridge."
-    }
-  ]
+  "tokens": {
+    "input": 0,
+    "output": 0
+  }
 }

@@ -4,6 +4,7 @@ import base64
 import hmac
 import hashlib
 import csv
+import json
 import sqlite3
 from datetime import datetime
 from flask import Flask, render_template_string, request, jsonify, g
@@ -13,13 +14,29 @@ from geopy.distance import geodesic
 app = Flask(__name__)
 
 # --- SETTINGS ---
-CLASSROOM_LAT = 32.104430866053
-CLASSROOM_LON = 35.20748555661226
+BUILDINGS = {
+    "1":  {"name": "Building 1",  "lat": 32.10452245512855,  "lon": 35.211204124037685},
+    "2":  {"name": "Building 2",  "lat": 32.10417459252424,  "lon": 35.21014546202312},
+    "4":  {"name": "Building 4",  "lat": 32.10340998866653,  "lon": 35.209423370345434},
+    "5":  {"name": "Building 5",  "lat": 32.10282606398588,  "lon": 35.20951992986139},
+    "6":  {"name": "Building 6",  "lat": 32.10233529171799,  "lon": 35.20972109553017},
+    "7":  {"name": "Building 7",  "lat": 32.102358012714305, "lon": 35.2093938660428},
+    "8":  {"name": "Building 8",  "lat": 32.10282379189815,  "lon": 35.20915246724033},
+    "9":  {"name": "Building 9",  "lat": 32.10336909133284,  "lon": 35.20906931876403},
+    "10": {"name": "Building 10", "lat": 32.1044562229191,   "lon": 35.21004929102805},
+    "11": {"name": "Building 11", "lat": 32.10459760397598,  "lon": 35.21062894421201},
+    "20": {"name": "Building 20", "lat": 32.105545146770744, "lon": 35.21125141871579},
+    "51": {"name": "Building 51", "lat": 32.10331904124445,  "lon": 35.207279199602496},
+    "52": {"name": "Building 52", "lat": 32.10363887202031,  "lon": 35.20647154045083},
+    "53": {"name": "Building 53", "lat": 32.10372508706993,  "lon": 35.20723980159488},
+    "54": {"name": "Building 54", "lat": 32.104136693336194, "lon": 35.206583168140924},
+    "55": {"name": "Building 55", "lat": 32.104448177916204, "lon": 35.207446641147094},
+}
+DEFAULT_BUILDINGS = ["55"]
 MAX_ALLOWED_RADIUS_METERS = 80.0
 SECRET_SEED = "ARIEL_I2SE_CLASS_KEY"
 RENDER_URL = "https://ex2-students-attendance-cheaking.onrender.com"
 DB_PATH = "attendance.db"
-stam=0;
 # Load allowed emails
 ALLOWED_EMAILS = set()
 csv_files = ["students.csv", "courseid_130158_participants.csv"]
@@ -59,7 +76,17 @@ def init_db():
             email TEXT NOT NULL,
             timestamp TEXT NOT NULL,
             date TEXT NOT NULL,
-            distance REAL
+            distance REAL,
+            building TEXT
+        )
+    """)
+    cols = [row[1] for row in db.execute("PRAGMA table_info(attendance)").fetchall()]
+    if "building" not in cols:
+        db.execute("ALTER TABLE attendance ADD COLUMN building TEXT")
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
         )
     """)
     db.execute("""
@@ -85,6 +112,32 @@ def init_db():
     db.close()
 
 init_db()
+
+def get_selected_buildings():
+    """Return the list of currently active building IDs from SQLite."""
+    db = get_db()
+    row = db.execute("SELECT value FROM settings WHERE key = 'selected_buildings'").fetchone()
+    if not row:
+        return list(DEFAULT_BUILDINGS)
+    try:
+        ids = json.loads(row["value"])
+        valid = [str(bid) for bid in ids if str(bid) in BUILDINGS]
+        return valid if valid else list(DEFAULT_BUILDINGS)
+    except (ValueError, TypeError):
+        return list(DEFAULT_BUILDINGS)
+
+def save_selected_buildings(building_ids):
+    """Persist selected building IDs to SQLite."""
+    valid = [str(bid) for bid in building_ids if str(bid) in BUILDINGS]
+    # Preserve building display order and deduplicate
+    ordered = [bid for bid in BUILDINGS if bid in valid]
+    db = get_db()
+    db.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('selected_buildings', ?)",
+        (json.dumps(ordered),)
+    )
+    db.commit()
+    return ordered
 
 def generate_token(time_window=None):
     if time_window is None:
@@ -204,6 +257,34 @@ def get_qr_code():
     img_str = base64.b64encode(buffer.getvalue()).decode('utf-8')
     return jsonify({"qr_image": f"data:image/png;base64,{img_str}"})
 
+@app.route('/api/buildings', methods=['GET', 'POST'])
+def api_buildings():
+    if request.method == 'POST':
+        data = request.json or {}
+        selected = data.get('selected')
+        if not isinstance(selected, list):
+            return jsonify({"success": False, "message": "Invalid selection format."}), 400
+        valid = [str(bid) for bid in selected if str(bid) in BUILDINGS]
+        if not valid:
+            return jsonify({"success": False, "message": "Please select at least one building."}), 400
+        saved = save_selected_buildings(valid)
+        return jsonify({
+            "success": True,
+            "selected": saved,
+            "selected_names": [BUILDINGS[bid]["name"] for bid in saved]
+        })
+
+    selected = get_selected_buildings()
+    buildings_list = [
+        {"id": bid, "name": info["name"], "lat": info["lat"], "lon": info["lon"]}
+        for bid, info in BUILDINGS.items()
+    ]
+    return jsonify({
+        "buildings": buildings_list,
+        "selected": selected,
+        "selected_names": [BUILDINGS[bid]["name"] for bid in selected]
+    })
+
 @app.route('/api/submit-attendance', methods=['POST'])
 def submit_attendance():
     data = request.json or {}
@@ -235,28 +316,38 @@ def submit_attendance():
     except (ValueError, TypeError):
         return jsonify({"success": False, "message": "Invalid coordinates received."}), 400
 
-    classroom_coords = (CLASSROOM_LAT, CLASSROOM_LON)
+    selected_ids = get_selected_buildings()
     student_coords = (lat, lon)
-    distance_meters = geodesic(classroom_coords, student_coords).meters
-    effective_distance = max(0.0, distance_meters - (accuracy / 2))
+
+    # Check distance against all selected buildings and pick the closest one
+    closest_building = None
+    min_distance = None
+    for bid in selected_ids:
+        b = BUILDINGS[bid]
+        dist = geodesic((b["lat"], b["lon"]), student_coords).meters
+        if min_distance is None or dist < min_distance:
+            min_distance = dist
+            closest_building = b
+
+    effective_distance = max(0.0, min_distance - (accuracy / 2))
 
     if effective_distance > MAX_ALLOWED_RADIUS_METERS:
         acc_text = f" (accuracy: ±{accuracy:.0f}m)" if accuracy > 0 else ""
         return jsonify({
             "success": False,
-            "message": f"Too far from classroom ({distance_meters:.0f}m away{acc_text}). Max allowed is {int(MAX_ALLOWED_RADIUS_METERS)}m."
+            "message": f"Too far from {closest_building['name']} ({min_distance:.0f}m away{acc_text}). Max allowed is {int(MAX_ALLOWED_RADIUS_METERS)}m."
         }), 403
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     db.execute(
-        "INSERT INTO attendance (email, timestamp, date, distance) VALUES (?, ?, ?, ?)",
-        (email, now, today, round(distance_meters, 1))
+        "INSERT INTO attendance (email, timestamp, date, distance, building) VALUES (?, ?, ?, ?, ?)",
+        (email, now, today, round(min_distance, 1), closest_building["name"])
     )
     db.commit()
 
     return jsonify({
         "success": True,
-        "message": f"Attendance recorded! ({distance_meters:.0f}m away)"
+        "message": f"Attendance recorded at {closest_building['name']}! ({min_distance:.0f}m away)"
     })
 
 @app.route('/api/attendance-list')
@@ -264,10 +355,18 @@ def attendance_list():
     today = datetime.now().strftime("%Y-%m-%d")
     db = get_db()
     rows = db.execute(
-        "SELECT email, timestamp, distance FROM attendance WHERE date = ? ORDER BY timestamp DESC",
+        "SELECT email, timestamp, distance, building FROM attendance WHERE date = ? ORDER BY timestamp DESC",
         (today,)
     ).fetchall()
-    return jsonify([{"email": r["email"], "time": r["timestamp"].split(" ")[1], "distance": r["distance"]} for r in rows])
+    return jsonify([
+        {
+            "email": r["email"],
+            "time": r["timestamp"].split(" ")[1],
+            "distance": r["distance"],
+            "building": r["building"] or "-"
+        }
+        for r in rows
+    ])
 
 # --- HTML TEMPLATES ---
 LECTURER_HTML = """
@@ -277,31 +376,176 @@ LECTURER_HTML = """
     <title>Lecturer - Attendance</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; margin: 20px; background: #f4f4f9; }
-        .card { background: white; padding: 20px; display: inline-block; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        img { width: 280px; height: 280px; }
-        table { margin: 20px auto; border-collapse: collapse; width: 90%; max-width: 600px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        body { font-family: Arial, sans-serif; text-align: center; margin: 20px; background: #f4f4f9; color: #222; }
+        .top-bar { max-width: 900px; margin: 0 auto 14px auto; text-align: left; }
+        .back-link { color: #007bff; text-decoration: none; font-weight: bold; font-size: 14px; }
+        .layout { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; max-width: 900px; margin: 0 auto; align-items: flex-start; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.08); box-sizing: border-box; }
+        .qr-card { flex: 0 0 320px; max-width: 100%; }
+        .loc-card { flex: 1 1 380px; max-width: 540px; text-align: left; }
+        img { width: 260px; height: 260px; }
+        .active-banner { background: #e8f2ff; color: #0056b3; padding: 8px 12px; border-radius: 8px; font-size: 14px; font-weight: bold; margin: 10px 0; }
+        .loc-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .loc-header h3 { margin: 0; }
+        .clear-btn { background: #eef1f5; color: #333; border: 1px solid #d0d7de; border-radius: 6px; padding: 5px 10px; font-size: 13px; cursor: pointer; font-weight: bold; }
+        .clear-btn:hover { background: #e2e6ec; }
+        .filter-input { width: 100%; padding: 8px 10px; margin: 10px 0; box-sizing: border-box; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+        .checklist-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(115px, 1fr)); gap: 8px; margin-top: 8px; }
+        .bldg-item { display: flex; align-items: center; gap: 8px; padding: 10px; border: 2px solid #e0e4ea; border-radius: 8px; cursor: pointer; background: #fafbfc; transition: all 0.15s ease; user-select: none; font-size: 14px; font-weight: 600; }
+        .bldg-item:hover { border-color: #80bdff; background: #f3f8ff; }
+        .bldg-item.checked { border-color: #007bff; background: #e7f1ff; color: #004a99; }
+        .bldg-item input { width: 17px; height: 17px; margin: 0; cursor: pointer; accent-color: #007bff; }
+        .save-status { margin-top: 10px; font-size: 13px; font-weight: bold; min-height: 18px; }
+        table { margin: 20px auto; border-collapse: collapse; width: 100%; max-width: 900px; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.06); }
+        th, td { border: 1px solid #e6e9ef; padding: 10px; text-align: left; font-size: 14px; }
         th { background: #007bff; color: white; }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h2>Scan QR to Mark Attendance</h2>
-        <p>Updates every 5 seconds</p>
-        <img id="qr-img" src="" alt="QR Code">
+    <div class="top-bar">
+        <a href="/lecturer" class="back-link">← Back to Lecturer Home</a>
     </div>
+
+    <div class="layout">
+        <div class="card qr-card">
+            <h2 style="margin-top:0;">Scan QR to Mark Attendance</h2>
+            <p style="color:#666; margin:4px 0;">Updates every 5 seconds</p>
+            <div class="active-banner" id="qr-active-banner">📍 Loading building...</div>
+            <img id="qr-img" src="" alt="QR Code">
+        </div>
+
+        <div class="card loc-card">
+            <div class="loc-header">
+                <h3>📍 Classroom Building Checklist</h3>
+                <button type="button" class="clear-btn" onclick="clearSelection()">Uncheck All</button>
+            </div>
+            <p style="color:#555; font-size:13px; margin:6px 0 4px 0;">
+                Check the building(s) where class is held (80m radius allowed):
+            </p>
+            <input type="text" id="bldg-filter" class="filter-input" placeholder="Search building number (e.g. 53)..." oninput="renderChecklist()">
+            <div id="checklist" class="checklist-grid"></div>
+            <div id="save-status" class="save-status"></div>
+        </div>
+    </div>
+
     <h3>Today's Attendance</h3>
     <table id="att-table">
-        <thead><tr><th>Email</th><th>Time</th><th>Distance (m)</th></tr></thead>
+        <thead><tr><th>Email</th><th>Building</th><th>Time</th><th>Distance (m)</th></tr></thead>
         <tbody></tbody>
     </table>
+
     <script>
+        let allBuildings = [];
+        let selectedIds = [];
+
+        function loadBuildings() {
+            fetch('/api/buildings')
+                .then(res => res.json())
+                .then(data => {
+                    allBuildings = data.buildings || [];
+                    selectedIds = data.selected || [];
+                    renderChecklist();
+                    updateActiveBanner(data.selected_names || []);
+                });
+        }
+
+        function updateActiveBanner(names) {
+            const banner = document.getElementById('qr-active-banner');
+            if (!names.length) {
+                banner.innerText = "⚠️ No building active";
+                banner.style.background = "#fff3cd";
+                banner.style.color = "#856404";
+            } else {
+                banner.innerText = "📍 Checking near: " + names.join(", ");
+                banner.style.background = "#e8f2ff";
+                banner.style.color = "#0056b3";
+            }
+        }
+
+        function renderChecklist() {
+            const container = document.getElementById('checklist');
+            const filter = (document.getElementById('bldg-filter').value || "").trim().toLowerCase();
+            container.innerHTML = '';
+
+            allBuildings.forEach(b => {
+                if (filter && !b.name.toLowerCase().includes(filter) && !b.id.includes(filter)) {
+                    return;
+                }
+                const isChecked = selectedIds.includes(b.id);
+                const label = document.createElement('label');
+                label.className = 'bldg-item' + (isChecked ? ' checked' : '');
+
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = isChecked;
+                cb.onchange = () => toggleBuilding(b.id, cb.checked);
+
+                const span = document.createElement('span');
+                span.innerText = b.name;
+
+                label.appendChild(cb);
+                label.appendChild(span);
+                container.appendChild(label);
+            });
+        }
+
+        function toggleBuilding(id, checked) {
+            if (checked) {
+                if (!selectedIds.includes(id)) selectedIds.push(id);
+            } else {
+                selectedIds = selectedIds.filter(x => x !== id);
+            }
+            renderChecklist();
+            saveSelection();
+        }
+
+        function clearSelection() {
+            selectedIds = [];
+            renderChecklist();
+            const status = document.getElementById('save-status');
+            status.innerText = "⚠️ Check a building to activate location checking.";
+            status.style.color = "#b45309";
+        }
+
+        function saveSelection() {
+            const status = document.getElementById('save-status');
+            if (selectedIds.length === 0) {
+                status.innerText = "⚠️ Select at least one building to apply.";
+                status.style.color = "#b45309";
+                return;
+            }
+            status.innerText = "Saving...";
+            status.style.color = "#555";
+
+            fetch('/api/buildings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ selected: selectedIds })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    selectedIds = data.selected;
+                    updateActiveBanner(data.selected_names);
+                    status.innerText = "✅ Active: " + data.selected_names.join(", ");
+                    status.style.color = "green";
+                } else {
+                    status.innerText = "❌ " + (data.message || "Could not save.");
+                    status.style.color = "red";
+                }
+            })
+            .catch(() => {
+                status.innerText = "❌ Network error saving selection.";
+                status.style.color = "red";
+            });
+        }
+
         function refreshQR() {
             fetch('/api/qr-code')
                 .then(res => res.json())
                 .then(data => { document.getElementById('qr-img').src = data.qr_image; });
         }
+
         function loadAttendance() {
             fetch('/api/attendance-list')
                 .then(res => res.json())
@@ -309,10 +553,12 @@ LECTURER_HTML = """
                     const tbody = document.querySelector('#att-table tbody');
                     tbody.innerHTML = '';
                     data.forEach(r => {
-                        tbody.innerHTML += `<tr><td>${r.email}</td><td>${r.time}</td><td>${r.distance}</td></tr>`;
+                        tbody.innerHTML += `<tr><td>${r.email}</td><td>${r.building}</td><td>${r.time}</td><td>${r.distance}</td></tr>`;
                     });
                 });
         }
+
+        loadBuildings();
         refreshQR();
         loadAttendance();
         setInterval(refreshQR, 5000);
@@ -495,15 +741,28 @@ LECTURER_HOME_HTML = """
         .box { background: white; padding: 30px; border-radius: 12px; max-width: 420px; margin: 40px auto; text-align: center; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
         a.btn { display: block; background: #007bff; color: white; padding: 14px; margin: 12px 0; border-radius: 8px; text-decoration: none; font-weight: bold; }
         a.btn:hover { background: #0056b3; }
+        .loc-pill { background: #e8f2ff; color: #0056b3; padding: 8px 12px; border-radius: 8px; font-size: 14px; font-weight: bold; margin-bottom: 16px; }
     </style>
 </head>
 <body>
     <div class="box">
         <h2>דף המרצה</h2>
-        <a href="/qr" class="btn">📷 פתח QR לנוכחות</a>
+        <div id="active-bldg" class="loc-pill">📍 טוען מיקום פעיל...</div>
+        <a href="/qr" class="btn">📷 פתח QR לנוכחות ובחירת בניין</a>
         <a href="/comments" class="btn">📝 הערות והצעות</a>
         <a href="/create-poll" class="btn">צור סקר</a>
     </div>
+    <script>
+        fetch('/api/buildings')
+            .then(res => res.json())
+            .then(data => {
+                const names = (data.selected_names || []).join(', ');
+                document.getElementById('active-bldg').innerText = '📍 מיקום פעיל: ' + (names || 'לא נבחר');
+            })
+            .catch(() => {
+                document.getElementById('active-bldg').innerText = '';
+            });
+    </script>
 </body>
 </html>
 """
