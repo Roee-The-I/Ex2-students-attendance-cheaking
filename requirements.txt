@@ -2,3 +2,5 @@ flask
 qrcode[pil]
 geopy
 gunicorn
+requests
+google-generativeai

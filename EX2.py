@@ -1,16 +1,26 @@
 import time
 import io
+import os
+import re
+import html as html_lib
 import base64
 import hmac
 import hashlib
 import csv
 import sqlite3
+import tempfile
+import threading
 from datetime import datetime
 from flask import Flask, render_template_string, request, jsonify, g
 import qrcode
+import requests
 from geopy.distance import geodesic
+import google.generativeai as genai
 
 app = Flask(__name__)
+# Class recordings are sent to the xAI API. Keep uploads under the host limit.
+# The speech API itself accepts up to 500 MB when given a direct file URL.
+app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
 
 # --- SETTINGS ---
 CLASSROOM_LAT = 32.1042
@@ -19,6 +29,12 @@ MAX_ALLOWED_RADIUS_METERS = 80.0
 SECRET_SEED = "ARIEL_I2SE_CLASS_KEY"
 RENDER_URL = "https://ex2-students-attendance-cheaking.onrender.com"
 DB_PATH = "attendance.db"
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+
+# In-memory store for video summary jobs: job_id -> {status, summary, error}
+summary_jobs = {}
 stam=0;
 # Load allowed emails
 ALLOWED_EMAILS = set()
@@ -269,6 +285,101 @@ def attendance_list():
     ).fetchall()
     return jsonify([{"email": r["email"], "time": r["timestamp"].split(" ")[1], "distance": r["distance"]} for r in rows])
 
+# --- VIDEO SUMMARY (Gemini) ---
+
+@app.route('/video-summary')
+def video_summary_page():
+    return render_template_string(VIDEO_SUMMARY_HTML)
+
+def _process_video_job(job_id, filepath, filename):
+    """Background thread: upload to Gemini File API, wait, summarize, clean up."""
+    try:
+        summary_jobs[job_id]["status"] = "uploading"
+
+        # Upload file to Gemini
+        video_file = genai.upload_file(path=filepath, display_name=filename)
+        summary_jobs[job_id]["status"] = "processing"
+
+        # Poll until Gemini finishes processing the video
+        while video_file.state.name == "PROCESSING":
+            time.sleep(5)
+            video_file = genai.get_file(video_file.name)
+
+        if video_file.state.name == "FAILED":
+            summary_jobs[job_id]["status"] = "error"
+            summary_jobs[job_id]["error"] = "Gemini failed to process the video file."
+            return
+
+        summary_jobs[job_id]["status"] = "summarizing"
+
+        model = genai.GenerativeModel(model_name="gemini-2.0-flash")
+        response = model.generate_content(
+            [
+                video_file,
+                (
+                    "This is a university class lecture recording. "
+                    "Please provide a comprehensive summary in the SAME LANGUAGE the lecturer speaks in the video. "
+                    "Include:\n"
+                    "1. **Main Topics** – the key subjects covered\n"
+                    "2. **Key Points** – important concepts, definitions, or formulas explained\n"
+                    "3. **Examples** – any examples, demos, or exercises shown\n"
+                    "4. **Action Items** – homework, assignments, or reading mentioned\n"
+                    "5. **Timeline** – approximate timestamps for major topic transitions\n\n"
+                    "Format the summary in clear markdown."
+                ),
+            ],
+            request_options={"timeout": 600},
+        )
+
+        summary_jobs[job_id]["status"] = "done"
+        summary_jobs[job_id]["summary"] = response.text
+
+        # Clean up remote file
+        try:
+            genai.delete_file(video_file.name)
+        except Exception:
+            pass
+
+    except Exception as exc:
+        summary_jobs[job_id]["status"] = "error"
+        summary_jobs[job_id]["error"] = str(exc)
+    finally:
+        # Clean up local temp file
+        try:
+            os.unlink(filepath)
+        except OSError:
+            pass
+
+@app.route('/api/summarize-video', methods=['POST'])
+def summarize_video():
+    if not GEMINI_API_KEY:
+        return jsonify({"success": False, "message": "GEMINI_API_KEY not configured on the server."}), 500
+
+    file = request.files.get('video')
+    if not file or file.filename == '':
+        return jsonify({"success": False, "message": "No video file uploaded."}), 400
+
+    # Save to a temp file so we can process in background
+    suffix = os.path.splitext(file.filename)[1] or ".mp4"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    file.save(tmp)
+    tmp.close()
+
+    job_id = hashlib.sha256(f"{time.time()}_{file.filename}".encode()).hexdigest()[:12]
+    summary_jobs[job_id] = {"status": "queued", "summary": None, "error": None}
+
+    thread = threading.Thread(target=_process_video_job, args=(job_id, tmp.name, file.filename), daemon=True)
+    thread.start()
+
+    return jsonify({"success": True, "job_id": job_id})
+
+@app.route('/api/summary-status/<job_id>')
+def summary_status(job_id):
+    job = summary_jobs.get(job_id)
+    if not job:
+        return jsonify({"status": "not_found"}), 404
+    return jsonify(job)
+
 # --- HTML TEMPLATES ---
 LECTURER_HTML = """
 <!DOCTYPE html>
@@ -503,6 +614,7 @@ LECTURER_HOME_HTML = """
         <a href="/qr" class="btn">📷 פתח QR לנוכחות</a>
         <a href="/comments" class="btn">📝 הערות והצעות</a>
         <a href="/create-poll" class="btn">צור סקר</a>
+        <a href="/video-summary" class="btn">🎬 סיכום הרצאה מוקלטת</a>
     </div>
 </body>
 </html>
@@ -593,5 +705,196 @@ POLL_HTML = """
 </body>
 </html>
 """
+VIDEO_SUMMARY_HTML = """
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>סיכום הרצאה מוקלטת</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #f4f4f9; margin: 0; padding: 20px; }
+        .container { max-width: 700px; margin: 30px auto; }
+        .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        h2 { margin-top: 0; text-align: center; }
+        .upload-area {
+            border: 2px dashed #007bff; border-radius: 10px; padding: 40px 20px;
+            text-align: center; cursor: pointer; transition: background 0.2s;
+            margin: 20px 0; position: relative;
+        }
+        .upload-area:hover, .upload-area.dragover { background: #e8f0fe; }
+        .upload-area input[type="file"] {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            opacity: 0; cursor: pointer;
+        }
+        .upload-area .icon { font-size: 48px; margin-bottom: 10px; }
+        .upload-area .label { font-size: 16px; color: #555; }
+        .file-info { background: #f0f0f0; padding: 10px 15px; border-radius: 8px; margin: 10px 0; display: none; }
+        .file-info .name { font-weight: bold; }
+        .file-info .size { color: #777; font-size: 14px; }
+        button.submit-btn {
+            display: block; width: 100%; padding: 14px; border: none; border-radius: 8px;
+            background: #007bff; color: white; font-size: 16px; font-weight: bold;
+            cursor: pointer; margin-top: 15px;
+        }
+        button.submit-btn:hover { background: #0056b3; }
+        button.submit-btn:disabled { background: #aaa; cursor: not-allowed; }
+        .progress-section { display: none; margin-top: 20px; }
+        .progress-bar-bg { background: #e0e0e0; border-radius: 8px; height: 10px; overflow: hidden; }
+        .progress-bar { height: 100%; background: #007bff; border-radius: 8px; transition: width 0.5s; width: 0%; }
+        .progress-label { text-align: center; margin-top: 8px; font-size: 14px; color: #555; }
+        .result-section { display: none; margin-top: 25px; }
+        .result-section .summary-box {
+            background: #f9f9f9; border: 1px solid #ddd; border-radius: 10px;
+            padding: 20px; line-height: 1.7; direction: ltr; text-align: left;
+            max-height: 600px; overflow-y: auto;
+        }
+        .error-msg { color: #d32f2f; background: #fdecea; padding: 12px; border-radius: 8px; margin-top: 15px; }
+        .back-link { display: inline-block; margin-top: 15px; color: #007bff; text-decoration: none; font-weight: bold; }
+        .formats { font-size: 13px; color: #888; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h2>🎬 סיכום הרצאה מוקלטת</h2>
+            <p style="text-align:center; color:#555;">העלו קובץ וידאו של הרצאה מוקלטת (Zoom, Meet, וכו') וקבלו סיכום אוטומטי באמצעות AI</p>
+
+            <div class="upload-area" id="upload-area">
+                <input type="file" id="video-file" accept="video/*,.mp4,.mkv,.avi,.mov,.webm,.m4v">
+                <div class="icon">📁</div>
+                <div class="label">גררו קובץ וידאו לכאן או לחצו לבחירה</div>
+                <div class="formats">MP4, MKV, AVI, MOV, WebM – עד 200MB</div>
+            </div>
+
+            <div class="file-info" id="file-info">
+                <span class="name" id="file-name"></span><br>
+                <span class="size" id="file-size"></span>
+            </div>
+
+            <button class="submit-btn" id="submit-btn" disabled onclick="uploadVideo()">📤 העלה וסכם</button>
+
+            <div class="progress-section" id="progress-section">
+                <div class="progress-bar-bg"><div class="progress-bar" id="progress-bar"></div></div>
+                <div class="progress-label" id="progress-label">מתחיל...</div>
+            </div>
+
+            <div class="result-section" id="result-section">
+                <h3>📝 סיכום ההרצאה:</h3>
+                <div class="summary-box" id="summary-box"></div>
+            </div>
+
+            <div id="error-box"></div>
+
+            <a href="/lecturer" class="back-link">← חזרה לדף המרצה</a>
+        </div>
+    </div>
+    <script>
+        const fileInput = document.getElementById('video-file');
+        const uploadArea = document.getElementById('upload-area');
+        const fileInfo = document.getElementById('file-info');
+        const fileName = document.getElementById('file-name');
+        const fileSize = document.getElementById('file-size');
+        const submitBtn = document.getElementById('submit-btn');
+
+        uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+        uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+        uploadArea.addEventListener('drop', () => uploadArea.classList.remove('dragover'));
+
+        fileInput.addEventListener('change', () => {
+            const f = fileInput.files[0];
+            if (f) {
+                fileName.textContent = f.name;
+                fileSize.textContent = formatBytes(f.size);
+                fileInfo.style.display = 'block';
+                submitBtn.disabled = false;
+            }
+        });
+
+        function formatBytes(b) {
+            if (b < 1024) return b + ' B';
+            if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+            return (b/(1024*1024)).toFixed(1) + ' MB';
+        }
+
+        const STATUS_LABELS = {
+            queued: '⏳ בתור לעיבוד...',
+            uploading: '📤 מעלה לשרת AI...',
+            processing: '🔄 מעבד את הוידאו (עלול לקחת מספר דקות)...',
+            summarizing: '✍️ כותב סיכום...',
+            done: '✅ הסתיים!',
+            error: '❌ שגיאה'
+        };
+        const STATUS_PROGRESS = { queued: 10, uploading: 25, processing: 55, summarizing: 80, done: 100, error: 100 };
+
+        async function uploadVideo() {
+            const f = fileInput.files[0];
+            if (!f) return;
+            submitBtn.disabled = true;
+            submitBtn.textContent = '⏳ מעלה...';
+            document.getElementById('progress-section').style.display = 'block';
+            document.getElementById('result-section').style.display = 'none';
+            document.getElementById('error-box').innerHTML = '';
+            setProgress(5, '📤 מעלה קובץ לשרת...');
+
+            const formData = new FormData();
+            formData.append('video', f);
+
+            try {
+                const res = await fetch('/api/summarize-video', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (!data.success) { showError(data.message); resetBtn(); return; }
+                pollStatus(data.job_id);
+            } catch (e) { showError('שגיאת רשת. נסו שנית.'); resetBtn(); }
+        }
+
+        function pollStatus(jobId) {
+            const iv = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/summary-status/' + jobId);
+                    const data = await res.json();
+                    setProgress(STATUS_PROGRESS[data.status] || 0, STATUS_LABELS[data.status] || data.status);
+                    if (data.status === 'done') {
+                        clearInterval(iv);
+                        document.getElementById('result-section').style.display = 'block';
+                        document.getElementById('summary-box').innerHTML = simpleMarkdown(data.summary || '');
+                        resetBtn();
+                    } else if (data.status === 'error') {
+                        clearInterval(iv);
+                        showError(data.error || 'Unknown error');
+                        resetBtn();
+                    }
+                } catch (e) {}
+            }, 3000);
+        }
+
+        function setProgress(pct, label) {
+            document.getElementById('progress-bar').style.width = pct + '%';
+            document.getElementById('progress-label').textContent = label;
+        }
+        function showError(msg) {
+            document.getElementById('error-box').innerHTML = '<div class="error-msg">' + msg + '</div>';
+        }
+        function resetBtn() {
+            submitBtn.disabled = false;
+            submitBtn.textContent = '📤 העלה וסכם';
+        }
+        function simpleMarkdown(md) {
+            return md
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+                .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+                .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                .replace(/^- (.+)$/gm, '<li>$1</li>')
+                .replace(/\n/g, '<br>');
+        }
+    </script>
+</body>
+</html>
+"""
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
